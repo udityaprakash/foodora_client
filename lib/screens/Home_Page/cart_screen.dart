@@ -1,9 +1,12 @@
+import 'dart:convert';
 import 'dart:developer';
+import 'dart:io';
 import 'dart:ui';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:flutter/material.dart';
 import 'package:foodora/config/api_integration.dart';
 import 'package:foodora/designing.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 class cart_screen extends StatefulWidget {
   const cart_screen({super.key});
@@ -15,6 +18,9 @@ class cart_screen extends StatefulWidget {
 class _cart_screenState extends State<cart_screen> {
   @override
   Widget build(BuildContext context) {
+    Razorpay _razorpay = Razorpay();
+    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
+    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
     final size = MediaQuery.of(context).size;
     final width_block = size.width / 100;
     final height_block = size.height / 100;
@@ -205,15 +211,61 @@ class _cart_screenState extends State<cart_screen> {
                             height: 5 * height_block,
                             child: ElevatedButton(
                                 onPressed: () async {
-                                  final response = await checkout();
-                                  Fluttertoast.showToast(
-                                      msg: response['msg'],
-                                      toastLength: Toast.LENGTH_SHORT,
-                                      gravity: ToastGravity.CENTER,
-                                      backgroundColor: Colors.black,
-                                      textColor: Colors.white,
-                                      fontSize: 16.0);
-                                  setState(() {});
+                                  try {
+                                    Future<void> generate_ODID() async {
+                                      var orderOptions = {
+                                        'amount': (total_cost * 118)
+                                            .round()
+                                            .toDouble(),
+                                        'currency': "INR",
+                                        'receipt': "order_rcptid_11"
+                                      };
+                                      final client = HttpClient();
+                                      final request = await client.postUrl(
+                                          Uri.parse(
+                                              'https://api.razorpay.com/v1/orders'));
+                                      request.headers.set(
+                                          HttpHeaders.contentTypeHeader,
+                                          "application/json; charset=UTF-8");
+                                      String basicAuth = 'Basic ' +
+                                          base64Encode(utf8.encode(
+                                              '${'rzp_test_sIdyvJkmfQigjO'}:${'CytHfdmSZuXebRA7VO4Oujmr'}'));
+                                      request.headers.set(
+                                          HttpHeaders.authorizationHeader,
+                                          basicAuth);
+                                      request.add(utf8
+                                          .encode(json.encode(orderOptions)));
+                                      final response = await request.close();
+                                      response
+                                          .transform(utf8.decoder)
+                                          .listen((contents) {
+                                        String orderId = contents
+                                            .split(',')[0]
+                                            .split(":")[1];
+                                        orderId = orderId.substring(
+                                            1, orderId.length - 1);
+
+                                        Map<String, dynamic> checkoutOptions = {
+                                          'key': 'rzp_test_sIdyvJkmfQigjO',
+                                          'amount': (total_cost * 118)
+                                              .round()
+                                              .toDouble(),
+                                          'name': 'Demo',
+                                          'description': 'Foodora Food',
+                                        };
+                                        try {
+                                          log("opening.............");
+                                          _razorpay.open(checkoutOptions);
+                                        } catch (e) {
+                                          print(e.toString());
+                                        }
+                                      });
+                                    }
+
+                                    generate_ODID();
+                                  } catch (er) {
+                                    log(er.toString());
+                                  }
                                 },
                                 style: ButtonStyle(
                                     backgroundColor: MaterialStateProperty.all(
@@ -243,6 +295,7 @@ class _cart_screenState extends State<cart_screen> {
             return Center(
                 child: Text(
               "Why Not Hungry? Add Items To Cart",
+              textAlign: TextAlign.center,
               style: TextStyle(
                   color: font_yellow_color,
                   fontSize: 7 * width_block,
@@ -261,4 +314,25 @@ class _cart_screenState extends State<cart_screen> {
       },
     );
   }
+}
+
+void _handlePaymentSuccess(PaymentSuccessResponse response) async {
+  final response = await checkout();
+  Fluttertoast.showToast(
+      msg: response['msg'],
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.CENTER,
+      backgroundColor: Colors.black,
+      textColor: Colors.white,
+      fontSize: 16.0);
+}
+
+void _handlePaymentError(PaymentFailureResponse response) {
+  Fluttertoast.showToast(
+      msg: "Failed! Please Retry",
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.CENTER,
+      backgroundColor: Colors.black,
+      textColor: Colors.white,
+      fontSize: 16.0);
 }
